@@ -1,0 +1,173 @@
+# Architect/implementer workflow for DSH.
+#
+# Two independent presets:
+#   - implementer: fast executor with code/file/test tools, no delegation and no
+#     user-question tool. Its model is fixed by the architect-executor tool.
+#   - architect: strong planner/verifier. It can read, search, run verification
+#     commands, and delegate implementation, but cannot write or edit files
+#     through the fs tool. The architect-executor plugin adds the fixed
+#     `implementer` tool and the operating protocol.
+- insert:
+    - id: preset-implementer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: implementer
+        name: Implementer
+        description: Fast executor for the architect/implementer workflow. Reads code, edits files, runs tests, and returns evidence.
+        order: 20
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the implementer. You receive a complete BuildBrief from the
+                architect. Execute it. You own code reading, edits, commands, tests,
+                and evidence. Do not redesign, expand scope, or change acceptance
+                criteria. If the brief is ambiguous or impossible, stop and return
+                status=blocked with the exact decision needed. Do not ask the user.
+                Report changed files, criterion-by-criterion evidence, commands with
+                exit codes, deviations, and blockers. Use exactly one of
+                done, partial, or blocked for Status. Keep the report under about
+                1,200 tokens: quote only the evidence lines, never full logs,
+                whole files, or entire diffs.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+    - id: preset-architect
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: architect
+        name: Architect
+        description: Strong planner and verifier. Delegates all code changes to the fixed fast implementer and checks the evidence.
+        order: 21
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the architect and verifier for this session. You own the
+                plan, acceptance criteria, risk assessment, and final verdict. You do
+                not edit code; delegate every code change to the `implementer` tool.
+                Read only the minimum code needed to decide, and do not duplicate the
+                implementer's full code reading. Load the `architect-executor` skill
+                before your first delegation.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              write: false
+              edit: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              customSkillDirs:
+                - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-architect-executor/package.json')), 'skills')
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+                config:
+                  thresholdRatio: 0.8
+                  headroomTokens: 16384
+                  retainTokens: 16000
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 4096
+                  headChars: 2048
+                  tailChars: 512
+          # `send_message`/`interrupt_agent`; `list_agents` is deliberately absent.
+          # The blocking `implementer` call is the only status surface, so there is
+          # no cheap tool left to poll while a child runs.
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+          - id: architect-executor
+            name: '@local/dsh-architect-executor'
+            config:
+              subagentProvider: spawn
+              agentPreset: implementer
+              provider: deepseek-account
+              model: deepseek-flash
+              reasoningEffort: high
+              maxDepth: 1
+              waitTimeoutMs: 900000
+              retry:
+                enabled: true
+                maxRetries: 10
+                delayMs: 30000
+                codes:
+                  - PI_AI_ERROR
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'

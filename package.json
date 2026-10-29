@@ -1,0 +1,24 @@
+{
+  "name": "@local/dsh-architect-executor",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Architect/implementer workflow for DeepSeek Harness: a strong model plans and verifies, a fast child agent edits and tests, behind one blocking handoff.",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check index.js && node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

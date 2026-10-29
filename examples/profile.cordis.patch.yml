@@ -1,0 +1,39 @@
+# Rows to merge into ~/.dsh/profiles/<profile>/cordis.patch.yml on a machine
+# where this bundle is installed. Keep your existing rows; add what is missing.
+#
+# The presets themselves (architect, implementer) come from the bundle's own
+# cordis.patch.yml, so they need no entry here.
+
+# 1. Register the routes both models need. The architect model is a normal
+#    session model; the implementer route is fixed by the architect-executor row
+#    (deepseek-account/deepseek-flash by default) and must resolve too.
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      openai:
+        baseURL: https://your-openai-compatible-endpoint/v1
+        apiKeyEnv: OPENAI_API_KEY
+        models:
+          - id: gpt-6-astra
+            name: GPT-6 Astra
+            contextWindow: 272000
+            maxTokens: 32768
+            input:
+              - text
+              - image
+
+# 2. Make the strong model the default for new sessions.
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: openai
+    model: gpt-6-astra
+
+# 3. Make `architect` the default preset. `default: standard` stays the fallback
+#    used by sessions that do not select a preset.
+- id: agent-preset-registry
+  name: "@deepseek-ai/dsh-agent-preset-registry"
+  config:
+    default: standard
+    selectedDefault: architect
